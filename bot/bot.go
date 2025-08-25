@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	twitch "github.com/amgoh/hoagiebot/bot/twitch"
 )
 
 // User Environment Variables
@@ -26,12 +27,12 @@ func Run() {
 	discord, err := discordgo.New("Bot " + BotToken)
 	checkNilErr(err)
 
+	webhook.Listen()
 	discord.Identify.Intents = discordgo.IntentsAll
 	
 	discord.AddHandler(newMessage) // command handler
 	discord.AddHandler(memberJoin) // welcome message handler
 	discord.AddHandler(verifyMember) // verify channel
-
 
 	discord.Open()
 	defer discord.Close()
