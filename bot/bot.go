@@ -11,7 +11,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// User Environment Variables
 var BotToken string
+
+// 
 
 func checkNilErr(e error) {
 	if e != nil {
@@ -23,9 +26,12 @@ func Run() {
 	discord, err := discordgo.New("Bot " + BotToken)
 	checkNilErr(err)
 
+	discord.Identify.Intents = discordgo.IntentsAll
+	
 	discord.AddHandler(newMessage) // command handler
-	discord.AddHandler(userJoin) // welcome message handler
+	discord.AddHandler(memberJoin) // welcome message handler
 	discord.AddHandler(verifyMember) // verify channel
+
 
 	discord.Open()
 	defer discord.Close()
@@ -36,45 +42,39 @@ func Run() {
 	<-c
 }
 
-func userJoin(discord *discordgo.Session, message *discordgo.MessageCreate) {
-	if message.Author.ID == discord.State.User.ID {
-		return
-	}
-	if message.Type != discordgo.MessageTypeGuildMemberJoin {
-		return
-	}
-
-	guildPrev, err := discord.GuildPreview(message.GuildID)
+func memberJoin(discord *discordgo.Session, user *discordgo.GuildMemberAdd) {
+	guildPrev, err := discord.GuildPreview(user.GuildID)
 	if err != nil {
 		return
 	}
 
-	guild, err := discord.Guild(message.GuildID)
+	guild, err := discord.Guild(user.GuildID)
 	if err != nil {
 		return
 	}
-
 
 	embeds := []*discordgo.MessageEmbed{ 
 		{
 			Title: "Welcome to HOAGIE", 
 			Thumbnail: &discordgo.MessageEmbedThumbnail{
-				URL: message.Author.AvatarURL(""),
-				ProxyURL: message.Author.AvatarURL(""),
+				URL: user.AvatarURL(""),
+				ProxyURL: user.AvatarURL(""),
 				Width: 300,
 				Height: 300,
 			},
-			Description: "> Read the [Rules](https://discord.com/channels/"+message.GuildID+"/"+message.ChannelID+")\n> Chat & Boost\n> You are User #"+strconv.Itoa(guildPrev.ApproximateMemberCount),
+			Description: 
+			"> Read the [Rules](https://discord.com/channels/"+user.GuildID+"/"+guild.SystemChannelID+")"+
+			"\n> Chat & Boost"+
+			"\n> You are User #"+strconv.Itoa(guildPrev.ApproximateMemberCount),
 		},
 	}
 
 	welcome_msg := discordgo.MessageSend {
-		Content: message.Author.Mention(),
+		Content: user.Mention(),
 		Embeds: embeds,
 	}
-	
-	discord.ChannelMessageDelete(message.ChannelID, message.Message.ID)
-	discord.ChannelMessageSendComplex(guild.SystemChannelID, &welcome_msg)
+
+	discord.ChannelMessageSendComplex(guild.SystemChannelID, &welcome_msg)	
 }
 
 func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
@@ -95,5 +95,6 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 }
 
 func verifyMember(discord *discordgo.Session, event *discordgo.MessageReactionAdd) {
-	
+	// TO-DO
+	// Give member roles when reacting to the Rules Message in the Rules channel
 }
