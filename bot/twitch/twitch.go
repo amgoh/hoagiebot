@@ -1,79 +1,60 @@
 package twitch
 
 import (
-	"crypto"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"os"
 )
 
-var secret string = "this is the secret for the webhooks"
+// Twitch-related environment vars
+var WebhookSecret string
+var TwitchClientID string
+var TwitchClientSecret string
 
+// Twitch EventSub JSON request body
+type RequestBody struct {
+	Challenge string `json:"challenge"`
+	Subscription struct {
+		ID string `json:"id"`
+		Status string `json:"status"`
+		Type string `json:"type"`
+		Version string `json:"version"`
+		Cost int `json:"cost"`
+		Condition struct {
+			BroadcasterID string `json:"broadcaster_user_id"`
+		} `json:"condition"`
+		Transport struct {
+			Method string `json:"webhook"`
+			Callback string `json:"callback"`
+		}	`json:"transport"`
+		Timestamp string `json:"created_at"`
+	} `json:"subscription"`
+	Event struct {
+		ID string `json:"id"`
+		UserID string `json:"user_id"`
+		UserLogin string `json:"user_login"`
+		UserName string `json:"user_name"`
+		BroadcasterUserID string `json:"broadcaster_user_id"`
+		BroadcasterUserLogin string `json:"broadcaster_user_login"`
+		BroadcasterUserName string `json:"broadcaster_user_name"`
+		Type string `json:"type"`
+		StartTime string `json:"started_at"`
+	} `json:"event"`
+}
 
-var MESSAGE_TYPE string = "Twitch-Eventsub-Message-Type"
-var MESSAGE_TYPE_VERIFICATION string = "webhook_callback_verification"
-var MESSAGE_TYPE_NOTIFICATION string = "notification"
-var MESSAGE_TYPE_REVOCATION string = "revocation"
-
-
-//app.post('/eventsub', (req, res) => {
-//    let secret = getSecret();
-//    let message = getHmacMessage(req);
-//    let hmac = HMAC_PREFIX + getHmac(secret, message);  // Signature to compare
-//
-//    if (true === verifyMessage(hmac, req.headers[TWITCH_MESSAGE_SIGNATURE])) {
-//        console.log("signatures match");
-//
-//        // Get JSON object from body, so you can process the message.
-//        let notification = JSON.parse(req.body);
-//        
-//        if (MESSAGE_TYPE_NOTIFICATION === req.headers[MESSAGE_TYPE]) {
-//            // TODO: Do something with the event's data.
-//
-//            console.log(`Event type: ${notification.subscription.type}`);
-//            console.log(JSON.stringify(notification.event, null, 4));
-//            
-//            res.sendStatus(204);
-//        }
-//        else if (MESSAGE_TYPE_VERIFICATION === req.headers[MESSAGE_TYPE]) {
-//            res.set('Content-Type', 'text/plain').status(200).send(notification.challenge);
-//        }
-//        else if (MESSAGE_TYPE_REVOCATION === req.headers[MESSAGE_TYPE]) {
-//            res.sendStatus(204);
-//
-//            console.log(`${notification.subscription.type} notifications revoked!`);
-//            console.log(`reason: ${notification.subscription.status}`);
-//            console.log(`condition: ${JSON.stringify(notification.subscription.condition, null, 4)}`);
-//        }
-//        else {
-//            res.sendStatus(204);
-//            console.log(`Unknown message type: ${req.headers[MESSAGE_TYPE]}`);
-//        }
-//    }
-//    else {
-//        console.log('403');    // Signatures didn't match.
-//        res.sendStatus(403);
-//    }
-//})
-//  
-//app.listen(port, () => {
-//  console.log(`Example app listening at http://localhost:${port}`);
-//})
-//
-
+// Verify the request using Twitch's given signature before responding
 func verifyMessage(req *http.Request, body []byte) bool {
 	messageId := req.Header.Get("Twitch-Eventsub-Message-Id")
 	timestamp := req.Header.Get("Twitch-Eventsub-Message-Timestamp")
 	signature := req.Header.Get("Twitch-Eventsub-Message-Signature")
 
-	
 	message := messageId + timestamp + string(body)
-	hash := hmac.New(sha256.New, []byte(secret))
+	hash := hmac.New(sha256.New, []byte(WebhookSecret))
 	hash.Write([]byte(message))
 
 	givenSignature := "sha256=" + hex.EncodeToString(hash.Sum(nil))
@@ -81,37 +62,73 @@ func verifyMessage(req *http.Request, body []byte) bool {
 	return hmac.Equal([]byte(givenSignature), []byte(signature))
 }
 
-func callback(req *http.Request, res *http.Response) {
+// Handle request from Twitch
+func handler(res http.ResponseWriter, req *http.Request) {
+	fmt.Println("Handle request")
+	
 	body, err := io.ReadAll(req.Body) 
+	fmt.Println("request body read!")
+	
 	if err != nil {
 		return
 	}
 
-
 	if verifyMessage(req, body) {
 		fmt.Println("Signatures match...")
 
-		notification, err := io.ReadAll(req.Body)
+		reqBody := &RequestBody{}
+		err = json.Unmarshal(body, reqBody)
 		if err != nil {
+			log.Fatal(err)
 			return
 		}
 
-		fmt.Println(notification)
+		fmt.Println("request body struct filled")
 
 		messageType := req.Header.Get("Twitch-Eventsub-Message-Type")
 
+		// Prepare HTTP response
 		switch messageType {
 		case "webhook_callback_verification":
-			fmt.Println("callback")
+			fmt.Println("verification")
+			res.Header().Set("Content-Type", "text/plain")
+			n, err := res.Write([]byte(reqBody.Challenge))
+			
+			if err != nil {
+				fmt.Printf("only %d bytes written... failed to respond\n", n)
+				return
+			}
+
 		case "notification":
 			fmt.Println("notification")
+			res.WriteHeader(http.StatusOK)
 		case "revocation":
 			fmt.Println("revocation")
+			res.WriteHeader(http.StatusOK)
 		default:
 			fmt.Println("ok!")
+			res.WriteHeader(http.StatusOK)
 		}
 	
 	} else {
 		fmt.Println("not ok!")
+		res.WriteHeader(403)
+	}
+}
+
+// Subscribe to Twitch EventSub through Webhook
+func SubscribeAndListen() {
+	if (len(WebhookSecret) == 0 || len(TwitchClientID) == 0 || len(TwitchClientSecret) == 0) {
+		fmt.Println("Twitch integration environment vars not set... Aborting")
+		return
+	}
+
+	fmt.Println("Listening...")
+	http.HandleFunc("/eventsub", handler)
+	fmt.Println("Set handler function...")
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal(err);
+		return 
 	}
 }

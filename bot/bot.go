@@ -15,25 +15,22 @@ import (
 // User Environment Variables
 var BotToken string
 
-// 
-
-func checkNilErr(e error) {
-	if e != nil {
-		log.Fatal("Error message")
-	}
-}
-
 func Run() {
 	discord, err := discordgo.New("Bot " + BotToken)
-	checkNilErr(err)
+	if err != nil {
+		log.Fatal("Error message")
+	}
 
-	webhook.Listen()
+//	BotSession := discord
+
+	// TO-DO: receive twitch event notification and send ping in discord
+	go twitch.SubscribeAndListen()
 	discord.Identify.Intents = discordgo.IntentsAll
 	
 	discord.AddHandler(newMessage) // command handler
 	discord.AddHandler(memberJoin) // welcome message handler
 	discord.AddHandler(verifyMember) // verify channel
-
+	
 	discord.Open()
 	defer discord.Close()
 
@@ -56,7 +53,7 @@ func memberJoin(discord *discordgo.Session, user *discordgo.GuildMemberAdd) {
 
 	embeds := []*discordgo.MessageEmbed{ 
 		{
-			Title: "Welcome to HOAGIE", 
+			Title: "Welcome to "+guild.Name, 
 			Thumbnail: &discordgo.MessageEmbedThumbnail{
 				URL: user.AvatarURL(""),
 				ProxyURL: user.AvatarURL(""),
@@ -91,11 +88,11 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	  discord.ChannelMessageSend(message.ChannelID, "Hello World😃")
 	}
 	if tokens[0] == "!youtube" {
-		discord.ChannelMessageSend(message.ChannelID, req_user + " CHECK OUT THE CHANNEL AND SUBSCRIBE!\nhttps://youtube.com/@amoghiehoagie")
+		discord.ChannelMessageSend(message.ChannelID, req_user + " CHECK OUT THE CHANNEL AND SUBSCRIBE!\nhttps://youtube.com/") // ----- INCLUDE YOUTUBE USER
 	}
 }
 
 func verifyMember(discord *discordgo.Session, event *discordgo.MessageReactionAdd) {
 	// TO-DO
-	// Give member roles when reacting to the Rules Message in the Rules channel
+	// Give member roles when reacting to the Rules Message in the selected Rules channel
 }
