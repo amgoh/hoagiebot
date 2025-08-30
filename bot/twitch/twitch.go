@@ -67,53 +67,50 @@ func handler(res http.ResponseWriter, req *http.Request) {
 	fmt.Println("Handle request")
 	
 	body, err := io.ReadAll(req.Body) 
-	fmt.Println("request body read!")
-	
 	if err != nil {
 		return
 	}
+	fmt.Println("request body read!")
 
-	if verifyMessage(req, body) {
-		fmt.Println("Signatures match...")
+	if !verifyMessage(req, body) {
+		fmt.Println("Signatures don't match...")
+		res.WriteHeader(403)
+		return
+	}
+	fmt.Println("Signatures match...")
 
-		reqBody := &RequestBody{}
-		err = json.Unmarshal(body, reqBody)
+	reqBody := &RequestBody{}
+	err = json.Unmarshal(body, reqBody)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	fmt.Println("request body struct filled")
+
+	msgType := req.Header.Get("Twitch-Eventsub-Message-Type")
+
+	// Prepare HTTP response
+	switch msgType {
+	case "webhook_callback_verification":
+		fmt.Println("verification")
+		res.Header().Set("Content-Type", "text/plain")
+		n, err := res.Write([]byte(reqBody.Challenge))
+		
 		if err != nil {
-			log.Fatal(err)
+			fmt.Printf("only %d bytes written... failed to respond\n", n)
 			return
 		}
 
-		fmt.Println("request body struct filled")
-
-		messageType := req.Header.Get("Twitch-Eventsub-Message-Type")
-
-		// Prepare HTTP response
-		switch messageType {
-		case "webhook_callback_verification":
-			fmt.Println("verification")
-			res.Header().Set("Content-Type", "text/plain")
-			n, err := res.Write([]byte(reqBody.Challenge))
-			
-			if err != nil {
-				fmt.Printf("only %d bytes written... failed to respond\n", n)
-				return
-			}
-
-		case "notification":
-			fmt.Println("notification")
-			res.WriteHeader(http.StatusOK)
-		case "revocation":
-			fmt.Println("revocation")
-			res.WriteHeader(http.StatusOK)
-		default:
-			fmt.Println("ok!")
-			res.WriteHeader(http.StatusOK)
+	case "notification":
+		fmt.Println("notification")
+		res.WriteHeader(http.StatusOK)
+	case "revocation":
+		fmt.Println("revocation")
+		res.WriteHeader(http.StatusOK)
+	default:
+		fmt.Println("ok!")
+		res.WriteHeader(http.StatusOK)
 		}
-	
-	} else {
-		fmt.Println("not ok!")
-		res.WriteHeader(403)
-	}
 }
 
 // Subscribe to Twitch EventSub through Webhook
@@ -123,12 +120,18 @@ func SubscribeAndListen() {
 		return
 	}
 
-	fmt.Println("Listening...")
+	subRequest := &http.Request{}
+	subRequest.RequestURI = "https://api.twitch.tv/helix/eventsub/subscriptions"
+	subRequest.Method = http.MethodPost
+	
+	subRequest.Header.Add("Authorization", TwitchClientSecret)
+	subRequest.Header.Add("Client-ID", TwitchClientID)
+
 	http.HandleFunc("/eventsub", handler)
 	fmt.Println("Set handler function...")
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
-		log.Fatal(err);
+		log.Fatal(err)
 		return 
 	}
 }

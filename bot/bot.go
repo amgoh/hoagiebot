@@ -8,12 +8,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bwmarrin/discordgo"
 	twitch "github.com/amgoh/hoagiebot/bot/twitch"
+	"github.com/bwmarrin/discordgo"
 )
 
 // User Environment Variables
 var BotToken string
+
+// Guild-Specific Variables
+var commandPrefix string = "!" // default prefix is "!" -> !command
 
 func Run() {
 	discord, err := discordgo.New("Bot " + BotToken)
@@ -30,7 +33,7 @@ func Run() {
 	discord.AddHandler(newMessage) // command handler
 	discord.AddHandler(memberJoin) // welcome message handler
 	discord.AddHandler(verifyMember) // verify channel
-	
+
 	discord.Open()
 	defer discord.Close()
 
@@ -72,6 +75,7 @@ func memberJoin(discord *discordgo.Session, user *discordgo.GuildMemberAdd) {
 		Embeds: embeds,
 	}
 
+//	discord.GuildMemberRoleAdd(user.GuildID, user.User.ID, )
 	discord.ChannelMessageSendComplex(guild.SystemChannelID, &welcome_msg)	
 }
 
@@ -84,15 +88,27 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 
 	req_user := message.Author.Mention()
 
-	if tokens[0] == "!help" {
+
+
+	switch (tokens[0]) {
+	case commandPrefix+"help":
 	  discord.ChannelMessageSend(message.ChannelID, "Hello World😃")
-	}
-	if tokens[0] == "!youtube" {
+	
+	case commandPrefix+"youtube":
 		discord.ChannelMessageSend(message.ChannelID, req_user + " CHECK OUT THE CHANNEL AND SUBSCRIBE!\nhttps://youtube.com/") // ----- INCLUDE YOUTUBE USER
+	case commandPrefix+"setPrefix":
+		if len(tokens) != 2 {
+			discord.ChannelMessageSend(message.ChannelID, req_user + ": Incorrect Usage. Try !setPrefix [symbol]")
+			return
+		}
+		
+		discord.ChannelMessageSend(message.ChannelID, req_user + ": Prefix set to " + tokens[1])
+		commandPrefix = tokens[1]
 	}
 }
 
 func verifyMember(discord *discordgo.Session, event *discordgo.MessageReactionAdd) {
 	// TO-DO
 	// Give member roles when reacting to the Rules Message in the selected Rules channel
+
 }
