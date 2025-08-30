@@ -17,6 +17,7 @@ var BotToken string
 
 // Guild-Specific Variables
 var commandPrefix string = "!" // default prefix is "!" -> !command
+var memberVerificationMsgID string
 
 func Run() {
 	discord, err := discordgo.New("Bot " + BotToken)
@@ -110,5 +111,7 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 func verifyMember(discord *discordgo.Session, event *discordgo.MessageReactionAdd) {
 	// TO-DO
 	// Give member roles when reacting to the Rules Message in the selected Rules channel
-
+	if event.MessageID != memberVerificationMsgID {
+		return
+	}
 }
