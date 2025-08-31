@@ -120,12 +120,12 @@ func SubscribeAndListen() {
 		return
 	}
 
-	subRequest := &http.Request{}
-	subRequest.RequestURI = "https://api.twitch.tv/helix/eventsub/subscriptions"
-	subRequest.Method = http.MethodPost
-	
-	subRequest.Header.Add("Authorization", TwitchClientSecret)
-	subRequest.Header.Add("Client-ID", TwitchClientID)
+//	subRequest := &http.Request{}
+//	subRequest.RequestURI = "https://api.twitch.tv/helix/eventsub/subscriptions"
+//	subRequest.Method = http.MethodPost
+//	
+//	subRequest.Header.Add("Authorization", TwitchClientSecret)
+//	subRequest.Header.Add("Client-ID", TwitchClientID)
 
 	http.HandleFunc("/eventsub", handler)
 	fmt.Println("Set handler function...")

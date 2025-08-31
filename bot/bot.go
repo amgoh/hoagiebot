@@ -19,13 +19,23 @@ var BotToken string
 var commandPrefix string = "!" // default prefix is "!" -> !command
 var memberVerificationMsgID string
 
+type BotGuildSettings struct {
+	CommandPrefix string
+	DefaultMemberRole string
+}
+
+var guildSettings BotGuildSettings
+
 func Run() {
 	discord, err := discordgo.New("Bot " + BotToken)
 	if err != nil {
 		log.Fatal("Error message")
 	}
 
-//	BotSession := discord
+	guildSettings = BotGuildSettings {
+		CommandPrefix: "!",
+		DefaultMemberRole: "",
+	}
 
 	// TO-DO: receive twitch event notification and send ping in discord
 	go twitch.SubscribeAndListen()
@@ -76,8 +86,9 @@ func memberJoin(discord *discordgo.Session, user *discordgo.GuildMemberAdd) {
 		Embeds: embeds,
 	}
 
-//	discord.GuildMemberRoleAdd(user.GuildID, user.User.ID, )
-	discord.ChannelMessageSendComplex(guild.SystemChannelID, &welcome_msg)	
+	discord.GuildMemberRoleAdd(user.GuildID, user.User.ID, guildSettings.DefaultMemberRole)
+	discord.ChannelMessageSendComplex(guild.SystemChannelID, &welcome_msg)
+	
 }
 
 func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
@@ -92,11 +103,15 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 
 
 	switch (tokens[0]) {
+	
+	// -- MEMBER COMMANDS
 	case commandPrefix+"help":
 	  discord.ChannelMessageSend(message.ChannelID, "Hello World😃")
 	
 	case commandPrefix+"youtube":
 		discord.ChannelMessageSend(message.ChannelID, req_user + " CHECK OUT THE CHANNEL AND SUBSCRIBE!\nhttps://youtube.com/") // ----- INCLUDE YOUTUBE USER
+	
+	// -- ADMINISTRATOR COMMANDS
 	case commandPrefix+"setPrefix":
 		if len(tokens) != 2 {
 			discord.ChannelMessageSend(message.ChannelID, req_user + ": Incorrect Usage. Try !setPrefix [symbol]")
@@ -105,7 +120,17 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		
 		discord.ChannelMessageSend(message.ChannelID, req_user + ": Prefix set to " + tokens[1])
 		commandPrefix = tokens[1]
+	case commandPrefix+"setMemberRole":
+		if len(tokens) != 2 {
+			discord.ChannelMessageSend(message.ChannelID, req_user + ": Incorrect Usage. Try !setMemberRole @Role")
+			return
+		}
+
+		discord.ChannelMessageSend(message.ChannelID, req_user + ": Default member role set to -> " + tokens[1])
+		guildSettings.DefaultMemberRole = strings.Trim(tokens[1], "<>@&")
+		fmt.Println(guildSettings.DefaultMemberRole)
 	}
+
 }
 
 func verifyMember(discord *discordgo.Session, event *discordgo.MessageReactionAdd) {
