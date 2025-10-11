@@ -21,7 +21,7 @@ var memberVerificationMsgID string
 
 type BotGuildSettings struct {
 	CommandPrefix string
-	DefaultMemberRole string
+	DefaultMemberRoleID string
 }
 
 var guildSettings BotGuildSettings
@@ -34,18 +34,21 @@ func Run() {
 
 	guildSettings = BotGuildSettings {
 		CommandPrefix: "!",
-		DefaultMemberRole: "",
+		DefaultMemberRoleID: "",
 	}
 
 	// TO-DO: receive twitch event notification and send ping in discord
-	go twitch.SubscribeAndListen()
-	discord.Identify.Intents = discordgo.IntentsAll
-	
+	discord.Identify.Intents = discordgo.IntentsAll;
+
 	discord.AddHandler(newMessage) // command handler
 	discord.AddHandler(memberJoin) // welcome message handler
 	discord.AddHandler(verifyMember) // verify channel
 
 	discord.Open()
+	
+	go twitch.ListenForWebhook()
+	
+
 	defer discord.Close()
 
 	fmt.Println("Bot active!")
@@ -86,9 +89,8 @@ func memberJoin(discord *discordgo.Session, user *discordgo.GuildMemberAdd) {
 		Embeds: embeds,
 	}
 
-	discord.GuildMemberRoleAdd(user.GuildID, user.User.ID, guildSettings.DefaultMemberRole)
+	discord.GuildMemberRoleAdd(user.GuildID, user.User.ID, guildSettings.DefaultMemberRoleID)
 	discord.ChannelMessageSendComplex(guild.SystemChannelID, &welcome_msg)
-	
 }
 
 func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
@@ -99,8 +101,6 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	tokens := strings.Split(message.Content, " ")
 
 	req_user := message.Author.Mention()
-
-
 
 	switch (tokens[0]) {
 	
@@ -127,8 +127,8 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		}
 
 		discord.ChannelMessageSend(message.ChannelID, req_user + ": Default member role set to -> " + tokens[1])
-		guildSettings.DefaultMemberRole = strings.Trim(tokens[1], "<>@&")
-		fmt.Println(guildSettings.DefaultMemberRole)
+		guildSettings.DefaultMemberRoleID = strings.Trim(tokens[1], "<>@&")
+		fmt.Println(guildSettings.DefaultMemberRoleID)
 	}
 
 }

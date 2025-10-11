@@ -1,6 +1,7 @@
 package twitch
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 // Twitch-related environment vars
@@ -16,35 +19,49 @@ var WebhookSecret string
 var TwitchClientID string
 var TwitchClientSecret string
 
+type TwitchAppAccessToken struct {
+	Token string `json:"access_token"`
+	ExpiryTime int `json:"expires_in"`
+}
+
+type Condition struct {
+	BroadcasterUserID string `json:"broadcaster_user_id"`
+	UserID string `json:"user_id"`
+}
+
+type Transport struct {
+	Method string `json:"webhook"`
+	Callback string `json:"callback"`
+}
+
+type Subscription struct {
+	ID string `json:"id"`
+	Status string `json:"status"`
+	Type string `json:"type"`
+	Version string `json:"version"`
+	Cost int `json:"cost"`
+	Condition Condition `json:"condition"`
+	Transport Transport	`json:"transport"`
+	Timestamp string `json:"created_at"`
+}
+
+type Event struct {
+	ID string `json:"id"`
+	UserID string `json:"user_id"`
+	UserLogin string `json:"user_login"`
+	UserName string `json:"user_name"`
+	BroadcasterUserID string `json:"broadcaster_user_id"`
+	BroadcasterUserLogin string `json:"broadcaster_user_login"`
+	BroadcasterUserName string `json:"broadcaster_user_name"`
+	Type string `json:"type"`
+	StartTime string `json:"started_at"`
+}
+
 // Twitch EventSub JSON request body
-type RequestBody struct {
+type TwitchRequestBody struct {
 	Challenge string `json:"challenge"`
-	Subscription struct {
-		ID string `json:"id"`
-		Status string `json:"status"`
-		Type string `json:"type"`
-		Version string `json:"version"`
-		Cost int `json:"cost"`
-		Condition struct {
-			BroadcasterID string `json:"broadcaster_user_id"`
-		} `json:"condition"`
-		Transport struct {
-			Method string `json:"webhook"`
-			Callback string `json:"callback"`
-		}	`json:"transport"`
-		Timestamp string `json:"created_at"`
-	} `json:"subscription"`
-	Event struct {
-		ID string `json:"id"`
-		UserID string `json:"user_id"`
-		UserLogin string `json:"user_login"`
-		UserName string `json:"user_name"`
-		BroadcasterUserID string `json:"broadcaster_user_id"`
-		BroadcasterUserLogin string `json:"broadcaster_user_login"`
-		BroadcasterUserName string `json:"broadcaster_user_name"`
-		Type string `json:"type"`
-		StartTime string `json:"started_at"`
-	} `json:"event"`
+	Subscription Subscription `json:"subscription"`
+ 	Event Event `json:"event"`
 }
 
 // Verify the request using Twitch's given signature before responding
@@ -79,7 +96,7 @@ func handler(res http.ResponseWriter, req *http.Request) {
 	}
 	fmt.Println("Signatures match...")
 
-	reqBody := &RequestBody{}
+	reqBody := &TwitchRequestBody{}
 	err = json.Unmarshal(body, reqBody)
 	if err != nil {
 		log.Fatal(err)
@@ -113,23 +130,102 @@ func handler(res http.ResponseWriter, req *http.Request) {
 		}
 }
 
+/*
+	Sends a POST request to the Twitch oauth2 token API to 
+	retrieve app access token 
+*/
+func getAppAccessToken() (*TwitchAppAccessToken, error) {
+	data := url.Values{}
+	data.Set("client_id", TwitchClientID)
+	data.Set("client_secret", TwitchClientSecret)
+	data.Set("grant_type", "client_credentials")
+	tokenReqBody := data.Encode()
+
+	tokenRequest, err := http.NewRequest(http.MethodPost, "https://id.twitch.tv/oauth2/token", 
+	strings.NewReader(tokenReqBody));
+	if err != nil {
+		return nil, err
+	}	
+	tokenRequest.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	res, err := http.DefaultClient.Do(tokenRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Got response with Status: %s\n", res.Status)
+
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	res.Body.Close()
+
+	accessToken := &TwitchAppAccessToken{}
+	err = json.Unmarshal(resBody, &accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	return accessToken, nil
+}
+
+func subscribeToEventSub(accessToken *TwitchAppAccessToken) (error) {
+	subReqBody, err := json.Marshal(&Subscription{
+		Type: "stream.online",
+		Version: "1",
+		Condition: Condition{
+			BroadcasterUserID: "1366",
+		},
+		Transport: Transport{
+			Method: "webhook",
+		},
+	})
+	
+	subRequest, err := http.NewRequest(http.MethodPost, "https://api.twitch.tv/helix/eventsub/subscriptions", bytes.NewReader(subReqBody));
+	if err != nil {
+		return err
+	}
+	subRequest.Header.Add("Authorization", "Bearer " + accessToken.Token)
+	subRequest.Header.Add("Client-Id", TwitchClientID)
+
+	res, err := http.DefaultClient.Do(subRequest)
+	if err != nil {
+		return err
+	}
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+
+	fmt.Printf("Response body: %s\n", resBody)
+
+	return nil
+}
+
 // Subscribe to Twitch EventSub through Webhook
-func SubscribeAndListen() {
+func ListenForWebhook() {
 	if (len(WebhookSecret) == 0 || len(TwitchClientID) == 0 || len(TwitchClientSecret) == 0) {
 		fmt.Println("Twitch integration environment vars not set... Aborting")
 		return
 	}
+	
+	accessToken, err := getAppAccessToken()
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 
-//	subRequest := &http.Request{}
-//	subRequest.RequestURI = "https://api.twitch.tv/helix/eventsub/subscriptions"
-//	subRequest.Method = http.MethodPost
-//	
-//	subRequest.Header.Add("Authorization", TwitchClientSecret)
-//	subRequest.Header.Add("Client-ID", TwitchClientID)
+	err = subscribeToEventSub(accessToken)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 
 	http.HandleFunc("/eventsub", handler)
-	fmt.Println("Set handler function...")
-	err := http.ListenAndServe(":8080", nil)
+	fmt.Println("Listening on port 8080...")
+	err = http.ListenAndServe(":8080", nil)
 	if err != nil {
 		log.Fatal(err)
 		return 
