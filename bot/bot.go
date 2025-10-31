@@ -19,9 +19,11 @@ var BotToken string
 var commandPrefix string = "!" // default prefix is "!" -> !command
 var memberVerificationMsgID string
 
+// TODO: Use some sort of DB for persistent guild setting storage
 type BotGuildSettings struct {
 	CommandPrefix string
 	DefaultMemberRoleID string
+	StreamPingChannelID string
 }
 
 var guildSettings BotGuildSettings
@@ -37,17 +39,27 @@ func Run() {
 		DefaultMemberRoleID: "",
 	}
 
-	// TO-DO: receive twitch event notification and send ping in discord
 	discord.Identify.Intents = discordgo.IntentsAll;
 
 	discord.AddHandler(newMessage) // command handler
 	discord.AddHandler(memberJoin) // welcome message handler
 	discord.AddHandler(verifyMember) // verify channel
 
+	go func() {
+		for event := range twitch.TwitchEventChan {
+			switch event.Subscription.Type {
+			case "stream.online":
+				go func(e twitch.TwitchEventPayload) {
+					// TODO: Figure out how to get stream noti channel ID dynamically
+					discord.ChannelMessageSend("929997812555460631", "@everyone go watch https://www.twitch.tv/amoghiehoagie")
+				}(event)
+			}
+		}
+	}()
+
 	discord.Open()
 	
-	go twitch.ListenForWebhook()
-	
+	go twitch.StartTwitchServer()
 
 	defer discord.Close()
 
@@ -109,7 +121,7 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	  discord.ChannelMessageSend(message.ChannelID, "Hello World😃")
 	
 	case commandPrefix+"youtube":
-		discord.ChannelMessageSend(message.ChannelID, req_user + " CHECK OUT THE CHANNEL AND SUBSCRIBE!\nhttps://youtube.com/") // ----- INCLUDE YOUTUBE USER
+		discord.ChannelMessageSend(message.ChannelID, req_user + ": CHECK OUT THE CHANNEL AND SUBSCRIBE!\nhttps://youtube.com/") // ----- INCLUDE YOUTUBE USER
 	
 	// -- ADMINISTRATOR COMMANDS
 	case commandPrefix+"setPrefix":
@@ -130,12 +142,12 @@ func newMessage(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		guildSettings.DefaultMemberRoleID = strings.Trim(tokens[1], "<>@&")
 		fmt.Println(guildSettings.DefaultMemberRoleID)
 	}
+	
 
 }
 
 func verifyMember(discord *discordgo.Session, event *discordgo.MessageReactionAdd) {
-	// TO-DO
-	// Give member roles when reacting to the Rules Message in the selected Rules channel
+	// TO-DO: Give member roles when reacting to the Rules Message in the selected Rules channel
 	if event.MessageID != memberVerificationMsgID {
 		return
 	}

@@ -19,6 +19,9 @@ var WebhookSecret string
 var TwitchClientID string
 var TwitchClientSecret string
 
+var TwitchEventChan = make(chan TwitchEventPayload, 10)
+
+// TODO: Create Types.go to hold all necessary types
 type TwitchAppAccessToken struct {
 	Token string `json:"access_token"`
 	ExpiryTime int `json:"expires_in"`
@@ -30,8 +33,9 @@ type Condition struct {
 }
 
 type Transport struct {
-	Method string `json:"webhook"`
+	Method string `json:"method"`
 	Callback string `json:"callback"`
+	Secret string `json:"secret"`
 }
 
 type Subscription struct {
@@ -58,7 +62,7 @@ type Event struct {
 }
 
 // Twitch EventSub JSON request body
-type TwitchRequestBody struct {
+type TwitchEventPayload struct {
 	Challenge string `json:"challenge"`
 	Subscription Subscription `json:"subscription"`
  	Event Event `json:"event"`
@@ -96,7 +100,7 @@ func handler(res http.ResponseWriter, req *http.Request) {
 	}
 	fmt.Println("Signatures match...")
 
-	reqBody := &TwitchRequestBody{}
+	reqBody := &TwitchEventPayload{}
 	err = json.Unmarshal(body, reqBody)
 	if err != nil {
 		log.Fatal(err)
@@ -108,25 +112,27 @@ func handler(res http.ResponseWriter, req *http.Request) {
 
 	// Prepare HTTP response
 	switch msgType {
-	case "webhook_callback_verification":
-		fmt.Println("verification")
-		res.Header().Set("Content-Type", "text/plain")
-		n, err := res.Write([]byte(reqBody.Challenge))
-		
-		if err != nil {
-			fmt.Printf("only %d bytes written... failed to respond\n", n)
-			return
-		}
-
-	case "notification":
-		fmt.Println("notification")
-		res.WriteHeader(http.StatusOK)
-	case "revocation":
-		fmt.Println("revocation")
-		res.WriteHeader(http.StatusOK)
-	default:
-		fmt.Println("ok!")
-		res.WriteHeader(http.StatusOK)
+		case "webhook_callback_verification":
+			fmt.Println("verification")
+			res.Header().Set("Content-Type", "text/plain")
+			n, err := res.Write([]byte(reqBody.Challenge))
+			
+			if err != nil {
+				fmt.Printf("only %d bytes written... failed to respond\n", n)
+				return
+			}
+	
+		case "notification":
+			fmt.Println("notification")
+			res.WriteHeader(http.StatusOK)
+	
+			TwitchEventChan <- *reqBody
+		case "revocation":
+			fmt.Println("revocation")
+			res.WriteHeader(http.StatusOK)
+		default:
+			fmt.Println("ok!")
+			res.WriteHeader(http.StatusOK)
 		}
 }
 
@@ -162,7 +168,7 @@ func getAppAccessToken() (*TwitchAppAccessToken, error) {
 	res.Body.Close()
 
 	accessToken := &TwitchAppAccessToken{}
-	err = json.Unmarshal(resBody, &accessToken)
+	err = json.Unmarshal(resBody, accessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -171,14 +177,20 @@ func getAppAccessToken() (*TwitchAppAccessToken, error) {
 }
 
 func subscribeToEventSub(accessToken *TwitchAppAccessToken) (error) {
+	// TODO: GuildSettings
+	broadcaster_user_id := getBroadcasterID("amoghiehoagie", accessToken)
+
+	// TODO: Switch from ngrok to duckdns -> AWS domain
 	subReqBody, err := json.Marshal(&Subscription{
 		Type: "stream.online",
 		Version: "1",
 		Condition: Condition{
-			BroadcasterUserID: "1366",
+			BroadcasterUserID: broadcaster_user_id+"1133192559",
 		},
 		Transport: Transport{
 			Method: "webhook",
+			Callback: "https://d62469055036.ngrok-free.app/eventsub",
+			Secret: WebhookSecret,
 		},
 	})
 	
@@ -186,6 +198,7 @@ func subscribeToEventSub(accessToken *TwitchAppAccessToken) (error) {
 	if err != nil {
 		return err
 	}
+	subRequest.Header.Add("Content-Type", "application/json")
 	subRequest.Header.Add("Authorization", "Bearer " + accessToken.Token)
 	subRequest.Header.Add("Client-Id", TwitchClientID)
 
@@ -204,12 +217,40 @@ func subscribeToEventSub(accessToken *TwitchAppAccessToken) (error) {
 	return nil
 }
 
-// Subscribe to Twitch EventSub through Webhook
-func ListenForWebhook() {
+func getBroadcasterID(username string, accessToken *TwitchAppAccessToken) (string) {
+	req, err := http.NewRequest(http.MethodGet, "https://api.twitch.tv/helix/users?login="+username, nil)
+	if err != nil {
+		fmt.Println("Broadcaster ID GET Request failed to create...")
+		return ""
+	}
+	req.Header.Add("Authorization", "Bearer " + accessToken.Token)
+	req.Header.Add("Client-Id", TwitchClientID)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Println("Broadcaster ID GET Request failed to send...")
+		return ""
+	}
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println("Broadcaster ID Response failed...")
+		return ""
+	}
+	res.Body.Close()
+
+	fmt.Printf("Response body: %s\n", resBody)
+	
+	// TODO: extract broadcaster ID from resBody, need helix api json struct
+
+	return ""
+}
+
+func StartTwitchServer() {
 	if (len(WebhookSecret) == 0 || len(TwitchClientID) == 0 || len(TwitchClientSecret) == 0) {
 		fmt.Println("Twitch integration environment vars not set... Aborting")
 		return
 	}
+	
 	
 	accessToken, err := getAppAccessToken()
 	if err != nil {
