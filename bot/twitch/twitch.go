@@ -189,7 +189,7 @@ func subscribeToEventSub(accessToken *TwitchAppAccessToken) (error) {
 		},
 		Transport: Transport{
 			Method: "webhook",
-			Callback: "https://d62469055036.ngrok-free.app/eventsub",
+			Callback: "https://hoagiebot.duckdns.org/eventsub",
 			Secret: WebhookSecret,
 		},
 	})
