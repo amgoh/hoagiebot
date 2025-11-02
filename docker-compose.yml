@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  hoagiebot:
+    image: hoagiebot:latest        
+    container_name: hoagiebot
+    restart: unless-stopped
+    build: .                       
+    ports:
+      - "8080:8080"                
+    env_file:
+      - .env    
+    volumes:
+      - ./data:/data                   
+    networks:
+      - botnet
+
+networks:
+  botnet:
+    driver: bridge
